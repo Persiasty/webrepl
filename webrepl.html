@@ -61,6 +61,11 @@
     <div id="put-file-list"></div>
     <input type="button" value="Send to device" id="put-file-button" onclick="put_file(); return false;" />
   </div>
+  <div class="file-box">
+    <strong>Files</strong>
+    <div id="files-list"></div>
+    <input type="button" value="list root" id="load-root-button" onclick="load_dir(''); return false;" />
+  </div>
 
   <div class="file-box">
     <strong>Get a file</strong>
@@ -82,6 +87,11 @@
 
 var term;
 var ws;
+var my_command = false;
+var payload_response = undefined;
+var payload_counter = 0;
+var payload_1 = '';
+var payload_2 = '';
 var connected = false;
 var binary_state = 0;
 var put_file_name = null;
@@ -146,6 +156,36 @@ function prepare_for_connect() {
 
 function update_file_status(s) {
     document.getElementById('file-status').innerHTML = s;
+}
+
+function load_dir(dir) {
+    if(ws != undefined) {
+        my_command = true;
+        payload_1 = (
+            "import os, json\r" +
+            "json.dumps([{\"name\": os.getcwd() + \"/\" + x[0], \"is_dir\": x[1] == 0x4000} for x in os.ilistdir(" + dir + ")])\r"
+        );
+        payload_2 = (
+            "del json\r" +
+            "del os\r"
+        );
+        payload_response = '';
+        payload_counter = 0;
+        ws.send(payload_1 + payload_2);
+    }
+}
+
+function create_entry(entry) {
+    var newa = document.createElement("a");
+    newa.innerText = entry.name;
+    newa.onclick = entry.is_dir ? function (e) {
+        load_dir(this.innerText);
+    } : function (e) {
+        document.getElementById('get_filename').value = this.innerText
+    }
+
+    var files_div = document.getElementById("files-list");
+    files_div.append(newa, document.createElement("br"));
 }
 
 function connect(url) {
@@ -243,7 +283,26 @@ function connect(url) {
                         break;
                 }
             }
-            term.write(event.data);
+            if(my_command) {
+                if(payload_counter <= payload_1.length + 1) {
+                    payload_counter++;
+                } else if(payload_response[payload_response.length - 1] !== ']'){
+                    payload_response += event.data;
+                } else if(payload_counter <= payload_1.length + payload_2.length + 3) {
+                    payload_counter++;
+                } else {
+                    var files_div = document.getElementById("files-list");
+                    while (files_div.firstChild) {
+                        files_div.removeChild(files_div.firstChild);
+                    }
+                    var dir_data = JSON.parse(payload_response);
+                    dir_data.forEach(function(e) {
+                        create_entry(e);
+                    });
+                    my_command = false;
+                }
+            } else
+                term.write(event.data);
         };
     };
 
